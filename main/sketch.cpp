@@ -310,6 +310,6 @@ void loop() {
     // Detailed info here:
     // https://stackoverflow.com/questions/66278271/task-watchdog-got-triggered-the-tasks-did-not-reset-the-watchdog-in-time
 
-    //     vTaskDelay(1);
-    delay(150);
+    vTaskDelay(1);
+//    delay(150);
 }
