@@ -9,7 +9,10 @@
 #include "driver/spi_master.h"
 #include "driver/ledc.h"
 #include "hal/ledc_types.h"
-#include "../components/BetterPWM/src/BetterPWM.h"
+//#include "../components/BetterPWM/src/BetterPWM.h"
+#include "../components/LSM6DSV/src/LSM6SPI.h"
+#include <soc/adc_channel.h>
+#include "driver/adc.h"
 
 
 #define GPIO(x) GPIO_NUM_##x
@@ -34,6 +37,7 @@
 #define M1_IN1_CHANNEL 0
 #define M1_IN2_CHANNEL 1
 #define M1_ISENSE GPIO(4)
+#define M1_ISENSE_ADC ADC1_GPIO4_CHANNEL
 #define M1_FAULT GPIO(47)
 #define M1_ENC GPIO(38)
 
@@ -44,6 +48,7 @@
 #define M2_IN1_CHANNEL 2
 #define M2_IN2_CHANNEL 3
 #define M2_ISENSE GPIO(8)
+#define M2_ISENSE_ADC ADC1_GPIO8_CHANNEL
 #define M2_FAULT GPIO(48)
 #define M2_ENC GPIO(41)
 
@@ -153,14 +158,12 @@ void processGamepad(ControllerPtr ctl) {
     }
 
     if (ctl->b()) {
-        // Turn on the 4 LED. Each bit represents one LED.
-        static int led = 0;
-        led++;
         // Some gamepads like the DS3, DualSense, Nintendo Wii, Nintendo Switch
         // support changing the "Player LEDs": those 4 LEDs that usually indicate
         // the "gamepad seat".
         // It is possible to change them by calling:
-        ctl->setPlayerLEDs(led & 0x0f);
+        ctl->playDualRumble(0 /* delayedStartMs */, 250 /* durationMs */, 0x80 /* weakMagnitude */,
+                            0xFF /* strongMagnitude */);
     }
 
     if (ctl->x()) {
@@ -178,14 +181,15 @@ void processGamepad(ControllerPtr ctl) {
 
     double drive = ctl->axisY() / 512.0;
     double turn = ctl->axisRX() / 512.0;
+    turn *= abs(drive) * .5 + .5;
     double m1Pow = constrain(drive + turn, -1, 1);
     double m2Pow = constrain(drive - turn, -1, 1);
 
-    Console.print("Drive: ");
-    Console.print((drive * 100.0));
-    Console.print("\tTurn: ");
-    Console.print((turn * 100.0));
-    Console.println();
+//    Console.print("Drive: ");
+//    Console.print((drive * 100.0));
+//    Console.print("\tTurn: ");
+//    Console.print((turn * 100.0));
+//    Console.println();
 
     digitalWrite(M1_IN2, m1Pow > 0);
     digitalWrite(M2_IN2, m2Pow < 0);
@@ -216,9 +220,11 @@ spi_device_handle_t M2SPI;
 
 // Arduino setup function. Runs in CPU 1
 void setup() {
-//    Serial.begin(115200);
+    Serial.begin(115200);
     pinMode(LED, OUTPUT);
 
+    LSM6DSV::initSPI();
+    LSM6DSV::init();
 
     Serial.printf("Firmware: %s\n", BP32.firmwareVersion());
     const uint8_t* addr = BP32.localBdAddress();
@@ -245,6 +251,11 @@ void setup() {
     // This service allows clients, like a mobile app, to setup and see the state of Bluepad32.
     // By default, it is disabled.
     BP32.enableBLEService(false);
+
+//    adc1_config_width(ADC_WIDTH_BIT_12);
+//    adc1_config_channel_atten(M1_ISENSE_ADC, ADC_ATTEN_DB_2_5);
+//    adc1_config_channel_atten(M2_ISENSE_ADC, ADC_ATTEN_DB_2_5);
+
 
     pinMode(M2_DRVOFF, OUTPUT);
     pinMode(M1_DRVOFF, OUTPUT);
@@ -397,6 +408,7 @@ void setPWMMode(){
 
 }
 
+uint64_t serialTimer = millis();
 // Arduino loop function. Runs in CPU 1.
 void loop() {
 //    gpio_set_level(LED, !gpio_get_level(LED));
@@ -411,7 +423,26 @@ void loop() {
     readFaults();
 //    setPWMMode();
 
+//    double m1ISENSE = adc1_get_raw(M1_ISENSE_ADC);
+//    double m2ISENSE = adc1_get_raw(M2_ISENSE_ADC); // / 4096.0
+//
+//    if(millis() - serialTimer > 20) {
+//        serialTimer = millis();
+//        Console.print("M1:");
+//        Console.print(m1ISENSE);
+//        Console.print(",M2:");
+//        Console.print(m2ISENSE);
+//        Console.println();
+//    }
+
+//    double jerk = ((double) LSM6DSV::getJerk()) / ((double) 0xFFFF);
+//    myController->playDualRumble(0 /* delayedStartMs */, 10 /* durationMs */, jerk * 255 /* weakMagnitude */,
+//                        jerk * 255 /* strongMagnitude */);
+
+    LSM6DSV::readRawData();
+
+
     // https://stackoverflow.com/questions/66278271/task-watchdog-got-triggered-the-tasks-did-not-reset-the-watchdog-in-time
 //    vTaskDelay(1);
-    delay(20);
+    delay(10);
 }
