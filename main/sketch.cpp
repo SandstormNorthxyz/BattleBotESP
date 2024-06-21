@@ -181,9 +181,10 @@ void processGamepad(ControllerPtr ctl) {
 
     double drive = ctl->axisY() / 512.0;
     double turn = ctl->axisRX() / 512.0;
-    turn *= abs(drive) * .5 + .5;
-    double m1Pow = constrain(drive + turn, -1, 1);
-    double m2Pow = constrain(drive - turn, -1, 1);
+    double power = 1 - ((ctl->r2() / 512.0) * .5);
+    turn *= 1 - (abs(drive) * .5);
+    double m1Pow = -constrain(drive + turn, -1, 1) * power;
+    double m2Pow = -constrain(drive - turn, -1, 1) * power;
 
 //    Console.print("Drive: ");
 //    Console.print((drive * 100.0));
