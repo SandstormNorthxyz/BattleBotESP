@@ -70,6 +70,8 @@
 #define LEDC_FREQUENCY          (50) // Frequency in Hertz. Set frequency at 4 kHz
 
 double WEAPONSPEED = 0;
+double weaponGood = false;
+boolean r1Prev = false, l1Prev = false, flipped = false;
 
 //
 // README FIRST, README FIRST, README FIRST
@@ -100,6 +102,10 @@ void onConnectedController(ControllerPtr ctl) {
                        properties.product_id);
         myController = ctl;
         commsGood = true;
+        ledcWrite(M1_IN1_CHANNEL, 0);
+        ledcWrite(M2_IN1_CHANNEL, 0);
+        ledcWrite(ESC_CHANNEL, 608);
+        WEAPONSPEED = 0;
     }else {
         Console.println("CALLBACK: Controller connected, but could not found empty slot");
     }
@@ -157,12 +163,37 @@ void processGamepad(ControllerPtr ctl) {
     // See how the different "dump*" functions dump the Controller info.
     dumpGamepad(ctl);
 
-    WEAPONSPEED = (((double) ctl->throttle()) / 1023.0) / 2.0;
+    WEAPONSPEED = 0; //(((double) ctl->throttle()) / 1023.0) / 2.0;
 
-    double drive = ctl->axisY() / 512.0;
-    double turn = ctl->axisRX() / 512.0;
+    double drive = ctl->axisY() / 514.0;
+    double turn = ctl->axisRX() / 514.0;
     double m1Pow = constrain(drive + turn, -1, 1);
     double m2Pow = constrain(drive - turn, -1, 1);
+    digitalWrite(M1_IN2, m1Pow > 0);
+    digitalWrite(M2_IN2, m2Pow < 0);
+    ledcWrite(M1_IN1_CHANNEL, abs(m1Pow) > 0.1 ? abs(m1Pow) * 8192.0 : 0);
+    ledcWrite(M2_IN1_CHANNEL, abs(m2Pow) > 0.1 ? abs(m2Pow) * 8192.0 : 0);
+
+//    //boolean flipped = false;
+//    if(ctl->r1() and !r1Prev){
+//        flipped = false;
+//    }else if(ctl->l1() and !l1Prev){
+//        flipped = true;
+//    }
+//    r1Prev = ctl->r1();
+//    l1Prev = ctl->l1();
+//
+//
+//    double drive = ctl->axisY() / 512.0;
+//    double turn = ctl->axisRX() / 512.0;
+//    turn *= 1.0 - (drive * .5);
+//    double power = 1.0 - ((ctl->throttle() / 1023.0) * .5);
+//    //power *= flipped ? -1.0 : 1.0;
+//    turn *= flipped ? -1.0 : 1.0;
+//    if(drive < .1 and drive > -.1) drive = 0.0;
+//    if(turn < .1 and turn > -.1) turn = 0.0;
+//    double m1Pow = constrain(drive - turn, -1, 1) * power;
+//    double m2Pow = constrain(drive + turn, -1, 1) * power;
 
 //    Console.print("Drive: ");
 //    Console.print((drive * 100.0));
@@ -170,10 +201,8 @@ void processGamepad(ControllerPtr ctl) {
 //    Console.print((turn * 100.0));
 //    Console.println();
 
-    digitalWrite(M1_IN2, m1Pow > 0);
-    digitalWrite(M2_IN2, m2Pow < 0);
-//    analogWrite(M1_IN1, abs(m1Pow) > 0.1 ? abs(m1Pow) * 255.0 : 0);
-//    analogWrite(M2_IN1, abs(m2Pow) > 0.1 ? abs(m2Pow) * 255.0 : 0);
+    digitalWrite(M1_IN2, m1Pow < 0);
+    digitalWrite(M2_IN2, m2Pow > 0);
     ledcWrite(M1_IN1_CHANNEL, abs(m1Pow) > 0.1 ? abs(m1Pow) * 8192.0 : 0);
     ledcWrite(M2_IN1_CHANNEL, abs(m2Pow) > 0.1 ? abs(m2Pow) * 8192.0 : 0);
 
