@@ -41,7 +41,7 @@
 #define M2_DRVOFF GPIO(3)
 #define M2_IN1 GPIO(21)
 #define M2_IN2 GPIO(17)
-#define M2_IN1_CHANNEL 2
+#define M2_IN1_CHANNEL 1
 #define M2_IN2_CHANNEL 3
 #define M2_ISENSE GPIO(8)
 #define M2_FAULT GPIO(48)
@@ -58,6 +58,18 @@
 #define EEPROM_ADDR ((uint8_t) 0x05)
 #define EEPROM_SCL GPIO(39)
 #define EEPROM_SDA GPIO(40)
+
+#define ESC_CHANNEL 2
+
+#define LEDC_TIMER              LEDC_TIMER_3
+#define LEDC_MODE               LEDC_LOW_SPEED_MODE
+#define LEDC_OUTPUT_IO          (ESC_PWM) // Define the output GPIO
+#define LEDC_CHANNEL            LEDC_CHANNEL_6
+#define LEDC_DUTY_RES           LEDC_TIMER_13_BIT // Set duty resolution to 13 bits
+#define LEDC_DUTY               (4096) // Set duty to 50%. (2 ** 13) * 50% = 4096
+#define LEDC_FREQUENCY          (50) // Frequency in Hertz. Set frequency at 4 kHz
+
+double WEAPONSPEED = 0;
 
 //
 // README FIRST, README FIRST, README FIRST
@@ -131,37 +143,6 @@ void processGamepad(ControllerPtr ctl) {
     // There are different ways to query whether a button is pressed.
     // By query each button individually:
     //  a(), b(), x(), y(), l1(), etc...
-    if (ctl->a()) {
-        static int colorIdx = 0;
-        // Some gamepads like DS4 and DualSense support changing the color LED.
-        // It is possible to change it by calling:
-        switch (colorIdx % 3) {
-            case 0:
-                // Red
-                ctl->setColorLED(255, 0, 0);
-                break;
-            case 1:
-                // Green
-                ctl->setColorLED(0, 255, 0);
-                break;
-            case 2:
-                // Blue
-                ctl->setColorLED(0, 0, 255);
-                break;
-        }
-        colorIdx++;
-    }
-
-    if (ctl->b()) {
-        // Turn on the 4 LED. Each bit represents one LED.
-        static int led = 0;
-        led++;
-        // Some gamepads like the DS3, DualSense, Nintendo Wii, Nintendo Switch
-        // support changing the "Player LEDs": those 4 LEDs that usually indicate
-        // the "gamepad seat".
-        // It is possible to change them by calling:
-        ctl->setPlayerLEDs(led & 0x0f);
-    }
 
     if (ctl->x()) {
         // Some gamepads like DS3, DS4, DualSense, Switch, Xbox One S, Stadia support rumble.
@@ -174,23 +155,27 @@ void processGamepad(ControllerPtr ctl) {
 
     // Another way to query controller data is by getting the buttons() function.
     // See how the different "dump*" functions dump the Controller info.
-//    dumpGamepad(ctl);
+    dumpGamepad(ctl);
+
+    WEAPONSPEED = (((double) ctl->throttle()) / 1023.0) / 2.0;
 
     double drive = ctl->axisY() / 512.0;
     double turn = ctl->axisRX() / 512.0;
     double m1Pow = constrain(drive + turn, -1, 1);
     double m2Pow = constrain(drive - turn, -1, 1);
 
-    Console.print("Drive: ");
-    Console.print((drive * 100.0));
-    Console.print("\tTurn: ");
-    Console.print((turn * 100.0));
-    Console.println();
+//    Console.print("Drive: ");
+//    Console.print((drive * 100.0));
+//    Console.print("\tTurn: ");
+//    Console.print((turn * 100.0));
+//    Console.println();
 
     digitalWrite(M1_IN2, m1Pow > 0);
     digitalWrite(M2_IN2, m2Pow < 0);
-    analogWrite(M1_IN1, abs(m1Pow) > 0.1 ? abs(m1Pow) * 255.0 : 0);
-    analogWrite(M2_IN1, abs(m2Pow) > 0.1 ? abs(m2Pow) * 255.0 : 0);
+//    analogWrite(M1_IN1, abs(m1Pow) > 0.1 ? abs(m1Pow) * 255.0 : 0);
+//    analogWrite(M2_IN1, abs(m2Pow) > 0.1 ? abs(m2Pow) * 255.0 : 0);
+    ledcWrite(M1_IN1_CHANNEL, abs(m1Pow) > 0.1 ? abs(m1Pow) * 8192.0 : 0);
+    ledcWrite(M2_IN1_CHANNEL, abs(m2Pow) > 0.1 ? abs(m2Pow) * 8192.0 : 0);
 
     // See ArduinoController.h for all the available functions.
 }
@@ -263,8 +248,20 @@ void setup() {
     pinMode(M2_IN2, OUTPUT);
     digitalWrite(M1_IN2, HIGH);
     digitalWrite(M2_IN2, HIGH);
-    analogWrite(M1_IN1, 0);
-    analogWrite(M2_IN1, 0);
+    ledcSetup(M1_IN1_CHANNEL, 2000, 12);
+    ledcSetup(M2_IN1_CHANNEL, 2000, 12);
+    ledcAttachPin(M1_IN1, M1_IN1_CHANNEL);
+    ledcAttachPin(M2_IN1, M2_IN1_CHANNEL);
+    ledcWrite(M1_IN1_CHANNEL, 0);
+    ledcWrite(M2_IN1_CHANNEL, 0);
+
+    ledcSetup(ESC_CHANNEL, 50, 13);
+    ledcAttachPin(ESC_PWM, ESC_CHANNEL);
+    ledcWrite(ESC_CHANNEL, 0);
+
+//    analogWrite(M1_IN1, 0);
+//    analogWrite(M2_IN1, 0);
+
 
     spi_bus_config_t DRV8243SPIBusConfig = {
         .mosi_io_num = SPI_CTX,
@@ -304,6 +301,30 @@ void setup() {
     };
     ret = spi_bus_add_device(SPI2_HOST, &M2SPIConfig, &M2SPI);
     ESP_ERROR_CHECK(ret);
+
+
+//      ledc_timer_config_t ledc_timer = {
+//          .speed_mode       = LEDC_MODE,
+//          .duty_resolution  = LEDC_DUTY_RES,
+//          .timer_num        = LEDC_TIMER,
+//          .freq_hz          = LEDC_FREQUENCY,  // Set output frequency at 4 kHz
+//          .clk_cfg          = LEDC_AUTO_CLK
+//      };
+//      ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+//
+//      // Prepare and then apply the LEDC PWM channel configuration
+//      ledc_channel_config_t ledc_channel = {
+//          .gpio_num       = LEDC_OUTPUT_IO,
+//
+//          .speed_mode     = LEDC_MODE,
+//          .channel        = LEDC_CHANNEL,
+//          .intr_type      = LEDC_INTR_DISABLE,
+//          .timer_sel      = LEDC_TIMER,
+//          .duty           = 0, // Set duty to 0%
+//          .hpoint         = 0
+//      };
+//
+//      ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
 
 }
 
@@ -402,6 +423,17 @@ void loop() {
 //    gpio_set_level(LED, !gpio_get_level(LED));
     gpio_set_level(LED, commsGood);
     gpio_set_level(DRV_ARM, commsGood);
+
+    if(commsGood) {
+        Console.println(WEAPONSPEED * 100);
+//        ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 4096));
+//        ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+        ledcWrite(ESC_CHANNEL, (WEAPONSPEED * 198.0) + 608);
+    }else{
+//        ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 1216));
+//        ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+        ledcWrite(ESC_CHANNEL, 608);
+    }
 
     bool dataUpdated = BP32.update();
     if (dataUpdated)
