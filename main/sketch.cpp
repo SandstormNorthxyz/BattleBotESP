@@ -163,16 +163,7 @@ void processGamepad(ControllerPtr ctl) {
     // See how the different "dump*" functions dump the Controller info.
     dumpGamepad(ctl);
 
-    WEAPONSPEED = 0; //(((double) ctl->throttle()) / 1023.0) / 2.0;
-
-    double drive = ctl->axisY() / 514.0;
-    double turn = ctl->axisRX() / 514.0;
-    double m1Pow = constrain(drive + turn, -1, 1);
-    double m2Pow = constrain(drive - turn, -1, 1);
-    digitalWrite(M1_IN2, m1Pow > 0);
-    digitalWrite(M2_IN2, m2Pow < 0);
-    ledcWrite(M1_IN1_CHANNEL, abs(m1Pow) > 0.1 ? abs(m1Pow) * 8192.0 : 0);
-    ledcWrite(M2_IN1_CHANNEL, abs(m2Pow) > 0.1 ? abs(m2Pow) * 8192.0 : 0);
+    WEAPONSPEED = (((double) ctl->throttle()) / 1023.0) / 2.0;
 
 //    //boolean flipped = false;
 //    if(ctl->r1() and !r1Prev){
@@ -194,6 +185,10 @@ void processGamepad(ControllerPtr ctl) {
 //    if(turn < .1 and turn > -.1) turn = 0.0;
 //    double m1Pow = constrain(drive - turn, -1, 1) * power;
 //    double m2Pow = constrain(drive + turn, -1, 1) * power;
+    int drive = constrain(ctl->axisRX(), -510, 510);
+    int turn = constrain(ctl->axisY(), -510, 510);
+    int m1Pow = constrain(drive + turn, -510, 510);
+    int m2Pow = constrain(drive - turn, -510, 510);
 
 //    Console.print("Drive: ");
 //    Console.print((drive * 100.0));
@@ -201,10 +196,17 @@ void processGamepad(ControllerPtr ctl) {
 //    Console.print((turn * 100.0));
 //    Console.println();
 
-    digitalWrite(M1_IN2, m1Pow < 0);
+    digitalWrite(M1_IN2, m1Pow > 0);
     digitalWrite(M2_IN2, m2Pow > 0);
-    ledcWrite(M1_IN1_CHANNEL, abs(m1Pow) > 0.1 ? abs(m1Pow) * 8192.0 : 0);
-    ledcWrite(M2_IN1_CHANNEL, abs(m2Pow) > 0.1 ? abs(m2Pow) * 8192.0 : 0);
+//    analogWrite(M1_IN1, abs(m1Pow) > 0.1 ? abs(m1Pow) * 255.0 : 0);
+//    analogWrite(M2_IN1, abs(m2Pow) > 0.1 ? abs(m2Pow) * 255.0 : 0);
+
+    ledcWrite(M1_IN1_CHANNEL, abs(m1Pow) > 60 ? abs(m1Pow) * 16 : 0);
+    ledcWrite(M2_IN1_CHANNEL, abs(m2Pow) > 60 ? abs(m2Pow) * 16 : 0);
+
+    Console.println(abs(m1Pow) > 60 ? abs(m1Pow) * 16 : 0);
+    Console.println(abs(m2Pow) > 60 ? abs(m2Pow) * 16 : 0);
+
 
     // See ArduinoController.h for all the available functions.
 }
@@ -277,8 +279,8 @@ void setup() {
     pinMode(M2_IN2, OUTPUT);
     digitalWrite(M1_IN2, HIGH);
     digitalWrite(M2_IN2, HIGH);
-    ledcSetup(M1_IN1_CHANNEL, 2000, 12);
-    ledcSetup(M2_IN1_CHANNEL, 2000, 12);
+    ledcSetup(M1_IN1_CHANNEL, 4000, 13);
+    ledcSetup(M2_IN1_CHANNEL, 4000, 13);
     ledcAttachPin(M1_IN1, M1_IN1_CHANNEL);
     ledcAttachPin(M2_IN1, M2_IN1_CHANNEL);
     ledcWrite(M1_IN1_CHANNEL, 0);
@@ -454,7 +456,7 @@ void loop() {
     gpio_set_level(DRV_ARM, commsGood);
 
     if(commsGood) {
-        Console.println(WEAPONSPEED * 100);
+//        Console.println(WEAPONSPEED * 100);
 //        ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 4096));
 //        ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
         ledcWrite(ESC_CHANNEL, (WEAPONSPEED * 198.0) + 608);
