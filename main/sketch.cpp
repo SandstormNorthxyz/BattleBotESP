@@ -6,11 +6,11 @@
 
 #include <Arduino.h>
 #include <Bluepad32.h>
-#include "driver/spi_master.h"
-#include "driver/ledc.h"
-#include "hal/ledc_types.h"
 #include "../components/BetterPWM/src/BetterPWM.h"
-
+#include "bt/uni_bt_allowlist.h"
+#include "driver/ledc.h"
+#include "driver/spi_master.h"
+#include "hal/ledc_types.h"
 
 #define GPIO(x) GPIO_NUM_##x
 
@@ -69,9 +69,14 @@
 #define LEDC_DUTY               (4096) // Set duty to 50%. (2 ** 13) * 50% = 4096
 #define LEDC_FREQUENCY          (50) // Frequency in Hertz. Set frequency at 4 kHz
 
+static const char * blueXboxController = "98:7A:14:07:73:2C";
+static const char * blackXboxController = "0C:35:26:6F:6F:49";
+
+
 double WEAPONSPEED = 0;
 double weaponGood = false;
-boolean r1Prev = false, l1Prev = false, flipped = false;
+boolean r1Prev = false, l1Prev = false, flipped = false, yPrev = false, aPrev = false, bPrev = false;
+int weaponState = 0;
 
 //
 // README FIRST, README FIRST, README FIRST
@@ -163,16 +168,31 @@ void processGamepad(ControllerPtr ctl) {
     // See how the different "dump*" functions dump the Controller info.
     dumpGamepad(ctl);
 
-    WEAPONSPEED = (((double) ctl->throttle()) / 1023.0) / 2.0;
+    if(ctl->y() and !yPrev) weaponState = 1;
+    if(ctl->a() and !aPrev) weaponState = 2;
+    if(ctl->b() and !bPrev) weaponState = 0;
 
-//    //boolean flipped = false;
-//    if(ctl->r1() and !r1Prev){
-//        flipped = false;
-//    }else if(ctl->l1() and !l1Prev){
-//        flipped = true;
-//    }
-//    r1Prev = ctl->r1();
-//    l1Prev = ctl->l1();
+    yPrev = ctl->y();
+    aPrev = ctl->a();
+    bPrev = ctl->b();
+
+
+    if(weaponState == 1) {
+        WEAPONSPEED = ((((double)ctl->brake()) / 1023.0) * 57.3) + 122.8;
+    }else if(weaponState == 2){
+        WEAPONSPEED = -((((double)ctl->brake()) / 1023.0) * 57.3) + 122.8;
+    }else{
+        WEAPONSPEED = 0;
+    }
+
+    //boolean flipped = false;
+    if(ctl->r1() and !r1Prev){
+        flipped = false;
+    }else if(ctl->l1() and !l1Prev){
+        flipped = true;
+    }
+    r1Prev = ctl->r1();
+    l1Prev = ctl->l1();
 //
 //
 //    double drive = ctl->axisY() / 512.0;
@@ -185,27 +205,30 @@ void processGamepad(ControllerPtr ctl) {
 //    if(turn < .1 and turn > -.1) turn = 0.0;
 //    double m1Pow = constrain(drive - turn, -1, 1) * power;
 //    double m2Pow = constrain(drive + turn, -1, 1) * power;
-    int drive = constrain(ctl->axisRX(), -510, 510);
-    int turn = constrain(ctl->axisY(), -510, 510);
-    int m1Pow = constrain(drive + turn, -510, 510);
-    int m2Pow = constrain(drive - turn, -510, 510);
 
-//    Console.print("Drive: ");
-//    Console.print((drive * 100.0));
-//    Console.print("\tTurn: ");
-//    Console.print((turn * 100.0));
-//    Console.println();
+    int turn = constrain(ctl->axisRX(), -510, 510);
+    int drive = constrain(ctl->axisY(), -510, 510);
+    //turn = turn / (510 - (abs(drive) / 2));
+    double power = 1.0 - ((ctl->throttle() / 1023.0) * .5);
+    drive *= flipped ? -1 : 1;
+    //turn *= flipped ? -1.0 : 1.0;
+    if(drive < 30 and drive > -30) drive = 0;
+    if(turn < 30 and turn > - 30) turn = 0;
+    int m1Pow = -constrain(drive + turn, -510, 510) * power;
+    int m2Pow = constrain(drive - turn, -510, 510) * power;
 
     digitalWrite(M1_IN2, m1Pow > 0);
     digitalWrite(M2_IN2, m2Pow > 0);
-//    analogWrite(M1_IN1, abs(m1Pow) > 0.1 ? abs(m1Pow) * 255.0 : 0);
-//    analogWrite(M2_IN1, abs(m2Pow) > 0.1 ? abs(m2Pow) * 255.0 : 0);
-
     ledcWrite(M1_IN1_CHANNEL, abs(m1Pow) > 60 ? abs(m1Pow) * 16 : 0);
     ledcWrite(M2_IN1_CHANNEL, abs(m2Pow) > 60 ? abs(m2Pow) * 16 : 0);
 
-    Console.println(abs(m1Pow) > 60 ? abs(m1Pow) * 16 : 0);
-    Console.println(abs(m2Pow) > 60 ? abs(m2Pow) * 16 : 0);
+//    Console.println(abs(m1Pow) > 60 ? abs(m1Pow) * 16 : 0);
+//    Console.println(abs(m2Pow) > 60 ? abs(m2Pow) * 16 : 0);
+    //    Console.print("Drive: ");
+    //    Console.print((drive * 100.0));
+    //    Console.print("\tTurn: ");
+    //    Console.print((turn * 100.0));
+    //    Console.println();
 
 
     // See ArduinoController.h for all the available functions.
@@ -243,12 +266,23 @@ void setup() {
     // Setup the Bluepad32 callbacks
     BP32.setup(&onConnectedController, &onDisconnectedController);
 
-    // "forgetBluetoothKeys()" should be called when the user performs
-    // a "device factory reset", or similar.
-    // Calling "forgetBluetoothKeys" in setup() just as an example.
-    // Forgetting Bluetooth keys prevents "paired" gamepads to reconnect.
-    // But it might also fix some connection / re-connection issues.
-    BP32.forgetBluetoothKeys();
+//    // "forgetBluetoothKeys()" should be called when the user performs
+//    // a "device factory reset", or similar.
+//    // Calling "forgetBluetoothKeys" in setup() just as an example.
+//    // Forgetting Bluetooth keys prevents "paired" gamepads to reconnect.
+//    // But it might also fix some connection / re-connection issues.
+//    BP32.forgetBluetoothKeys();
+
+    bd_addr_t blueXboxAddr;
+    bd_addr_t blackXboxAddr;
+
+    sscanf_bd_addr(blueXboxController, blueXboxAddr);
+    sscanf_bd_addr(blackXboxController, blackXboxAddr);
+
+    uni_bt_allowlist_add_addr(blueXboxAddr);
+    //uni_bt_allowlist_add_addr(blackXboxAddr); //TODO reenable if need to use owencontroller
+    uni_bt_allowlist_set_enabled(true);
+
 
     // Enables mouse / touchpad support for gamepads that support them.
     // When enabled, controllers like DualSense and DualShock4 generate two connected devices:
@@ -459,7 +493,7 @@ void loop() {
 //        Console.println(WEAPONSPEED * 100);
 //        ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 4096));
 //        ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
-        ledcWrite(ESC_CHANNEL, (WEAPONSPEED * 198.0) + 608);
+        ledcWrite(ESC_CHANNEL, ((uint32_t) WEAPONSPEED) + 608);
     }else{
 //        ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 1216));
 //        ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
