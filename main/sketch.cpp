@@ -107,10 +107,6 @@ void onConnectedController(ControllerPtr ctl) {
                        properties.product_id);
         myController = ctl;
         commsGood = true;
-        ledcWrite(M1_IN1_CHANNEL, 0);
-        ledcWrite(M2_IN1_CHANNEL, 0);
-        ledcWrite(ESC_CHANNEL, 608);
-        WEAPONSPEED = 0;
     }else {
         Console.println("CALLBACK: Controller connected, but could not found empty slot");
     }
@@ -122,6 +118,11 @@ void onDisconnectedController(ControllerPtr ctl) {
         Console.printf("CALLBACK: Controller disconnected from index\n");
         myController = nullptr;
         commsGood = false;
+        weaponState = 0;
+        ledcWrite(M1_IN1_CHANNEL, 0);
+        ledcWrite(M2_IN1_CHANNEL, 0);
+        ledcWrite(ESC_CHANNEL, 608);
+        WEAPONSPEED = 0;
     }else {
         Console.println("CALLBACK: Controller disconnected, but not found in myControllers");
     }
